@@ -275,6 +275,7 @@ namespace TypeGen.Core.Generator
             var classAttribute = _metadataReaderFactory.GetInstance().GetAttribute<ExportTsClassAttribute>(type);
             var interfaceAttribute = _metadataReaderFactory.GetInstance().GetAttribute<ExportTsInterfaceAttribute>(type);
             var enumAttribute = _metadataReaderFactory.GetInstance().GetAttribute<ExportTsEnumAttribute>(type);
+            var enumAsClassAttribute = _metadataReaderFactory.GetInstance().GetAttribute<ExportTsClassAsEnumAttribute>(type);
 
             if (classAttribute != null)
             {
@@ -286,9 +287,9 @@ namespace TypeGen.Core.Generator
                 return GenerateInterface(type, interfaceAttribute);
             }
 
-            if (enumAttribute != null)
+            if (enumAttribute != null || enumAsClassAttribute != null)
             {
-                return GenerateEnum(type, enumAttribute);
+                return GenerateEnum(type, enumAttribute, enumAsClassAttribute);
             }
 
             return GenerateNotMarked(type, Options.BaseOutputDirectory);
@@ -380,7 +381,7 @@ namespace TypeGen.Core.Generator
 
             if (type.GetTypeInfo().IsEnum)
             {
-                return GenerateEnum(type, new ExportTsEnumAttribute { OutputDir = outputDirectory });
+                return GenerateEnum(type, new ExportTsEnumAttribute { OutputDir = outputDirectory }, null);
             }
 
             throw new CoreException($"Generated type must be either a C# class or enum. Error when generating type {type.FullName}");
@@ -465,21 +466,21 @@ namespace TypeGen.Core.Generator
         /// </summary>
         /// <param name="type"></param>
         /// <param name="enumAttribute"></param>
+        /// <param name="enumAsClassAttribute"></param>
         /// <returns>Generated TypeScript file paths (relative to the Options.BaseOutputDirectory)</returns>
-        private IEnumerable<string> GenerateEnum(Type type, ExportTsEnumAttribute enumAttribute)
+        private IEnumerable<string> GenerateEnum(Type type, ExportTsEnumAttribute enumAttribute, ExportTsClassAsEnumAttribute enumAsClassAttribute)
         {
-            string valuesText = GetEnumMembersText(type);
+            string valuesText = GetEnumMembersText(type, enumAsClassAttribute != null);
 
             // create TypeScript source code for the enum
 
             string tsEnumName = _typeService.GetTsTypeName(type, true);
-            string filePath = GetFilePath(type, enumAttribute.OutputDir);
-            string filePathRelative = GetRelativeFilePath(type, enumAttribute.OutputDir);
+            string filePath = enumAttribute != null ? GetFilePath(type, enumAttribute.OutputDir) : GetFilePath(type, enumAsClassAttribute.OutputDir);
+            string filePathRelative = enumAttribute != null ? GetRelativeFilePath(type, enumAttribute.OutputDir) : GetRelativeFilePath(type, enumAsClassAttribute.OutputDir);
 
-            string enumText = _typeService.UseDefaultExport(type) ? 
-                _templateService.FillEnumDefaultExportTemplate("", tsEnumName, valuesText, enumAttribute.IsConst, Options.FileHeading) :
-                _templateService.FillEnumTemplate("", tsEnumName, valuesText, enumAttribute.IsConst, Options.FileHeading);
-
+            string enumText = _typeService.UseDefaultExport(type) ?
+                    _templateService.FillEnumDefaultExportTemplate("", tsEnumName, valuesText, enumAttribute != null ? enumAttribute.IsConst : false, Options.FileHeading) :
+                    _templateService.FillEnumTemplate("", tsEnumName, valuesText, enumAttribute != null ? enumAttribute.IsConst : false, Options.FileHeading);
             // write TypeScript file
 
             FileContentGenerated?.Invoke(this, new FileContentGeneratedArgs(type, filePath, enumText));
@@ -502,12 +503,13 @@ namespace TypeGen.Core.Generator
         /// Gets TypeScript class property definition source code
         /// </summary>
         /// <param name="memberInfo"></param>
+        /// <param name="getAsEnumMember"></param>
         /// <returns></returns>
-        private string GetClassPropertyText(MemberInfo memberInfo)
+        private string GetClassPropertyText(MemberInfo memberInfo, bool getAsEnumMember = false)
         {
             LogClassPropertyWarnings(memberInfo);
             
-            string modifiers = Options.ExplicitPublicAccessor ? "public " : "";
+            string modifiers = Options.ExplicitPublicAccessor && !getAsEnumMember ? "public " : "";
 
             if (IsStaticTsProperty(memberInfo)) modifiers += "static ";
             if (IsReadonlyTsProperty(memberInfo)) modifiers += "readonly ";
@@ -525,7 +527,7 @@ namespace TypeGen.Core.Generator
             // try to get default value from the member's default value
             string valueText = _tsContentGenerator.GetMemberValueText(memberInfo);
             if (!string.IsNullOrWhiteSpace(valueText))
-                return _templateService.FillClassPropertyTemplate(modifiers, name, typeName, typeUnions, valueText);
+                return getAsEnumMember ? _templateService.FillEnumValueTemplate(name, valueText) : _templateService.FillClassPropertyTemplate(modifiers, name, typeName, typeUnions, valueText);
 
             // try to get default value from Options.DefaultValuesForTypes
             if (Options.DefaultValuesForTypes.Any() && Options.DefaultValuesForTypes.ContainsKey(typeName))
@@ -642,14 +644,21 @@ namespace TypeGen.Core.Generator
         /// Gets TypeScript enum member definition source code
         /// </summary>
         /// <param name="type"></param>
+        /// <param name="useClassMembersAsEnum"></param>
         /// <returns></returns>
-        private string GetEnumMembersText(Type type)
+        private string GetEnumMembersText(Type type, bool useClassMembersAsEnum)
         {
             var valuesText = "";
             IEnumerable<FieldInfo> fieldInfos = type.GetFields(BindingFlags.Public | BindingFlags.Static);
 
-            valuesText += fieldInfos.Aggregate(valuesText, (current, fieldInfo) => current + GetEnumMemberText(fieldInfo));
-
+            if (useClassMembersAsEnum)
+            {
+                valuesText += fieldInfos.Aggregate(valuesText, (current, fieldInfo) => current + GetClassPropertyText(fieldInfo, true));
+            }
+            else
+            {
+                valuesText += fieldInfos.Aggregate(valuesText, (current, fieldInfo) => current + GetEnumMemberText(fieldInfo));
+            }
             return RemoveLastLineEnding(valuesText);
         }
 

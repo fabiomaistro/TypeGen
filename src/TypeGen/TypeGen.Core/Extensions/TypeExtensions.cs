@@ -24,6 +24,7 @@ namespace TypeGen.Core.Extensions
             Requires.NotNull(reader, nameof(reader));
             
             return reader.GetAttribute<ExportTsClassAttribute>(type) != null ||
+                   reader.GetAttribute<ExportTsClassAsEnumAttribute>(type) != null ||
                    reader.GetAttribute<ExportTsInterfaceAttribute>(type) != null ||
                    reader.GetAttribute<ExportTsEnumAttribute>(type) != null;
         }

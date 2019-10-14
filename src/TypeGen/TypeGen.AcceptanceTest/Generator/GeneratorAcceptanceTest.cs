@@ -19,7 +19,7 @@ namespace TypeGen.AcceptanceTest.Generator
     {
         private const string ProjectPath = "../../../../TypeGen.TestWebApp/";
 
-        private readonly IFileSystem _fileSystem = Substitute.For<IFileSystem>();
+        private readonly IFileSystem _fileSystem = new FileSystem();
         
         private IDictionary<string, string> Content => new Dictionary<string, string>
         {
@@ -76,10 +76,10 @@ namespace TypeGen.AcceptanceTest.Generator
         };
 
         #region Assembly
-        
-        [Theory(Skip = "This test should be run only in local environment. It's marked as skipped, because remote services (build servers etc.) should not pick it up.")]
-//        [Theory]
-		[InlineData("./")]
+
+        //[Theory(Skip = "This test should be run only in local environment. It's marked as skipped, because remote services (build servers etc.) should not pick it up.")]
+        [Theory]
+        [InlineData("./")]
 		[InlineData("generated-typescript/")]
 		[InlineData("nested/directory/generated-typescript/")]
         public void Generate_AssemblyGiven_TypeScriptContentGenerated(string outputPath)
@@ -101,6 +101,7 @@ namespace TypeGen.AcceptanceTest.Generator
 
             //assert
 
+            _fileSystem.SaveFile(outputPath + "permissions.ts", Content["permissions.ts"]);
             _fileSystem.Received().SaveFile(outputPath + "foo-constants.ts", Content["foo-constants.ts"]);
             _fileSystem.Received().SaveFile(outputPath + "bar.ts", Content["bar.ts"]);
             _fileSystem.Received().SaveFile(outputPath + "base-class.ts", Content["base-class.ts"]);
